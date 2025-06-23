@@ -1,85 +1,97 @@
 <!DOCTYPE html>
 <html>
 
-<head>
-  <meta charset="utf-8">
-  <title>deck-gl.particle</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
-  <script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js"></script>
-  <script src="https://unpkg.com/deck.gl@8.9.4/dist.min.js"></script>
-  <script src="https://unpkg.com/deck.gl-particle@1.1.0/dist/deck.gl-particle.min.js"></script>
-  <!-- <script src="../dist/deck.gl-particle.min.js"></script> -->
-  <link rel="stylesheet" href="./style.css">
-  <link rel="stylesheet" href="./attribution.css">
-  <link rel="stylesheet" href="./info-control.css">
-  <link rel="stylesheet" href="./fps-meter.css">
-</head>
+  <head>
+    <meta charset="utf-8">
+    <title>deck.gl + MapLibre + Particle</title>
 
-<body>
-  <div id="deck"></div>
-  <div id="top-left"></div>
-  <div id="bottom-right"></div>
+    <!-- MapLibre -->
+    <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 
-  <script type="module">
-    import { initConfig } from './config.js';
+    <!-- deck.gl -->
+    <script src="https://unpkg.com/deck.gl@8.9.4/dist.min.js"></script>
+    <!-- Particle Layer -->
+    <script src="../deck.gl-particle.min.js"></script>
 
-    window.addEventListener('DOMContentLoaded', () => {
-      const config = initConfig();
+    <!-- UI + Style -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+    <script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js"></script>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./attribution.css">
+    <link rel="stylesheet" href="./info-control.css">
+    <link rel="stylesheet" href="./fps-meter.css">
 
-      const image = 'region.png';
-      const imageUnscale = [-128, 127];
-      const bounds = [-125.09000000000003, 48.2327999999999975, -119.7467999999999932, 50.4861000000000004];
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+      }
 
-      // deck.gl
-      const deckgl = window.deckgl = new deck.Deck({
-        parent: document.getElementById('deck'),
-        initialViewState: {
-          longitude: -122.41840000000002,
-          latitude: 49.359449999999995,
-          zoom: 6,
-        },
-        controller: {
-          normalize: false,
-        },
-        views: [
-          new deck.MapView({ repeat: true }),
-        ],
-        layers: [
-          new deck.TileLayer({
-            id: 'basemap',
-            data: 'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
-            minZoom: 0,
-            maxZoom: 19,
-            tileSize: 256,
-            renderSubLayers: props => {
-              const {bbox: {west, south, east, north}} = props.tile;
-              return new deck.BitmapLayer(props, {
-                data: null,
-                image: props.data,
-                bounds: [west, south, east, north]
-              });
-            },
-          }),
-          new DeckGlParticle.ParticleLayer({
-            id: 'particle',
-            // data properties
-            image,
-            imageUnscale,
-            bounds,
-            // style properties
-            numParticles: config.particle.numParticles,
-            maxAge: config.particle.maxAge,
-            speedFactor: config.particle.speedFactor,
-            width: config.particle.width,
-            color: config.particle.color,
-            opacity: config.particle.opacity,
-            animate: config.particle.animate,
-            getPolygonOffset: () => [0, -1000],
-          }),
-        ],
+      #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="top-left"></div>
+    <div id="bottom-right"></div>
+
+    <script type="module">
+      import { initConfig } from './config.js';
+
+      window.addEventListener('DOMContentLoaded', () => {
+        const config = initConfig();
+
+        const image = 'wind_overlay.png';
+        const bounds = [102, 8.4, 109.6, 23.5];
+        const uRange = [-2.75, 7.27];
+        const vRange = [-1.76, 6.65];
+
+
+        // 1. Tạo MapLibre map
+        const map = new maplibregl.Map({
+          container: 'map',
+          style: "https://maps.track-asia.com/styles/v2/simple.json?key=public",
+          center: [102, 15],
+          zoom: 6
+        });
+
+        // 2. Khởi tạo Deck.GL overlay
+        const deckOverlay = new deck.MapboxOverlay({
+          interleaved: true,
+          layers: [
+            new DeckGlParticle.ParticleLayer({
+              id: 'particle',
+              image,
+              bounds,
+              uRange,
+              vRange,
+              numParticles: 1000,
+              maxAge: 20,
+              speedFactor: 100,
+              width: 3,
+              color: [255, 255, 255],
+              opacity: 1,
+              animate: true,
+              getPolygonOffset: () => [0, -1000],
+            }),
+          ]
+        });
+
+        // 3. Gắn deck lên MapLibre
+        map.on('load', () => {
+          map.addControl(deckOverlay);
+        });
       });
-    });
-  </script>
-</body>
+    </script>
+  </body>
 
 </html>

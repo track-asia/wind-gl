@@ -18,7 +18,8 @@ const defaultProps = {
   ...LineLayer.defaultProps,
 
   image: {type: 'image', value: null, async: true},
-  imageUnscale: {type: 'array', value: null},
+  uRange: {type: 'array', value: [-126, 125]}, // [uMin, uMax]
+  vRange: {type: 'array', value: [-126, 125]}, // [vMin, vMax]
 
   numParticles: {type: 'number', min: 1, max: 1000000, value: 5000},
   maxAge: {type: 'number', min: 1, max: 255, value: 100},
@@ -195,7 +196,7 @@ export default class ParticleLayer extends LineLayer {
     }
 
     const {viewport, timeline} = this.context;
-    const {image, imageUnscale, bounds, numParticles, speedFactor, maxAge} = this.props;
+    const {image, uRange, vRange, bounds, numParticles, speedFactor, maxAge} = this.props;
     const {numAgedInstances, transform, previousViewportZoom, previousTime} = this.state;
     const time = timeline.getTime();
     if (!image || time === previousTime) {
@@ -221,7 +222,8 @@ export default class ParticleLayer extends LineLayer {
       viewportZoomChangeFactor: viewportZoomChangeFactor || 0,
 
       bitmapTexture: image,
-      imageUnscale: imageUnscale || [0, 0],
+      uRange: uRange,
+      vRange: vRange,
       bounds,
       numParticles,
       maxAge,

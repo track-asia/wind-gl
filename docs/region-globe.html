@@ -26,16 +26,17 @@
     window.addEventListener('DOMContentLoaded', () => {
       const config = initConfig();
 
-      const image = 'region.png';
-      const imageUnscale = [-128, 127];
-      const bounds = [-125.09000000000003, 48.2327999999999975, -119.7467999999999932, 50.4861000000000004];
+        const image = 'wind_overlay.png';
+        const bounds = [102, 8.4, 109.6, 23.5];
+        const uRange = [-2.75, 7.27];
+        const vRange = [-1.76, 6.65];
 
       // deck.gl
       const deckgl = window.deckgl = new deck.Deck({
         parent: document.getElementById('deck'),
         initialViewState: {
-          longitude: -122.41840000000002,
-          latitude: 49.359449999999995,
+          longitude: 104.8,
+          latitude: 15.95,
           altitude: 0.75,
           zoom: 5,
         },
@@ -78,7 +79,8 @@
             id: 'particle',
             // data properties
             image,
-            imageUnscale,
+            uRange,
+            vRange,
             bounds,
             // style properties
             numParticles: config.particle.numParticles,

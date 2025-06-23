@@ -2,12 +2,12 @@ export function initConfig() {
   return {
     rotate: false,
     particle: {
-      numParticles: 5000,
+      numParticles: 1000,
       maxAge: 25,
-      speedFactor: 2,
-      color: [255, 255, 255],
+      speedFactor: 30,
+      color: [200, 200, 200],
       width: 2,
-      opacity: 0.1,
+      opacity: 0.5,
       animate: true,
     },
   };
