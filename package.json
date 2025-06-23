@@ -1,17 +1,17 @@
 {
-  "name": "deck.gl-particle",
-  "version": "1.1.0",
+  "name": "@trackasia/wind-gl",
+  "version": "1.0.0",
   "description": "Particle simulation layer for deck.gl",
   "keywords": [
+    "trackasia",
     "deck.gl",
     "particle",
     "wind"
   ],
-  "author": "WeatherLayers.com <info@weatherlayers.com>",
   "license": "MPL-2.0",
-  "repository": "github:weatherlayers/deck.gl-particle",
+  "repository": "https://github.com/track-asia/wind-gl.git",
   "main": "src/index.js",
-  "browser": "dist/deck.gl-particle.min.js",
+  "browser": "dist/wind-gl.min.js",
   "type": "module",
   "scripts": {
     "build": "rimraf dist && rollup -c",

@@ -12,7 +12,7 @@
     <!-- deck.gl -->
     <script src="https://unpkg.com/deck.gl@8.9.4/dist.min.js"></script>
     <!-- Particle Layer -->
-    <script src="../deck.gl-particle.min.js"></script>
+    <script src="../dist/wind-gl.min.js"></script>
 
     <!-- UI + Style -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
@@ -68,7 +68,7 @@
         const deckOverlay = new deck.MapboxOverlay({
           interleaved: true,
           layers: [
-            new DeckGlParticle.ParticleLayer({
+            new WindGL.ParticleLayer({
               id: 'particle',
               image,
               bounds,
@@ -78,7 +78,7 @@
               maxAge: 20,
               speedFactor: 100,
               width: 3,
-              color: [255, 255, 255],
+              color: [200, 200, 200],
               opacity: 1,
               animate: true,
               getPolygonOffset: () => [0, -1000],

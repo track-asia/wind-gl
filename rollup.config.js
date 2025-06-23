@@ -12,7 +12,7 @@ function bundle(filename, options = {}) {
     output: {
       file: filename,
       format: 'umd',
-      name: 'DeckGlParticle',
+      name: 'WindGL',
       sourcemap: true,
       globals: {
         '@deck.gl/core': 'deck',
