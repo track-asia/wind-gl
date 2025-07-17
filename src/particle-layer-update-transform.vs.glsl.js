@@ -213,9 +213,13 @@ void main() {
 
   // update position
   vec2 speed = raster_get_values(bitmapColor) * speedFactor;
-  // float dist = sqrt(speed.x * speed.x + speed.y + speed.y) * 10000.;
+  
+  // Option 1: Geodesic calculation (more accurate for global view)
+  // float dist = sqrt(speed.x * speed.x + speed.y * speed.y) * 10000.;
   // float bearing = degrees(-atan2(speed.y, speed.x));
   // targetPosition.xy = destinationPoint(sourcePosition.xy, dist, bearing);
+  
+  // Option 2: Simple offset calculation (faster, good for regional view)
   float distortion = cos(radians(sourcePosition.y)); 
   vec2 offset = vec2(speed.x / distortion, speed.y);
   targetPosition.xy = sourcePosition.xy + offset;
