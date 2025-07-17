@@ -1,97 +1,162 @@
 <!DOCTYPE html>
 <html>
 
-  <head>
-    <meta charset="utf-8">
-    <title>deck.gl + MapLibre + Particle</title>
+<head>
+  <meta charset="utf-8">
+  <title>deck.gl + MapLibre + Particle</title>
 
-    <!-- MapLibre -->
-    <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
+  <!-- MapLibre -->
+  <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 
-    <!-- deck.gl -->
-    <script src="https://unpkg.com/deck.gl@8.9.4/dist.min.js"></script>
-    <!-- Particle Layer -->
-    <script src="../dist/wind-gl.min.js"></script>
+  <!-- deck.gl -->
+  <script src="https://unpkg.com/deck.gl@8.9.4/dist.min.js"></script>
+  <!-- Particle Layer -->
+  <script src="../dist/wind-gl.min.js"></script>
 
-    <!-- UI + Style -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
-    <script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js"></script>
-    <link rel="stylesheet" href="./style.css">
-    <link rel="stylesheet" href="./attribution.css">
-    <link rel="stylesheet" href="./info-control.css">
-    <link rel="stylesheet" href="./fps-meter.css">
+  <!-- UI + Style -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+  <script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js"></script>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./attribution.css">
+  <link rel="stylesheet" href="./info-control.css">
+  <link rel="stylesheet" href="./fps-meter.css">
 
-    <style>
-      body,
-      html {
-        margin: 0;
-        padding: 0;
-      }
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+    }
 
-      #map {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-      }
-    </style>
-  </head>
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
 
-  <body>
-    <div id="map"></div>
-    <div id="top-left"></div>
-    <div id="bottom-right"></div>
+<body>
+  <div id="map"></div>
+  <div id="top-left"></div>
+  <div id="bottom-right"></div>
 
-    <script type="module">
-      import { initConfig } from './config.js';
+  <script type="module">
+    import { initConfig, initGui } from './config.js';
+    import { AttributionControl } from './attribution.js';
+    import { InfoControl } from './info-control.js';
+    import { FpsMeterControl } from './fps-meter.js';
 
-      window.addEventListener('DOMContentLoaded', () => {
-        const config = initConfig();
+    window.addEventListener('DOMContentLoaded', () => {
+      const config = initConfig();
 
-        const image = 'wind_overlay.png';
-        const bounds = [102, 8.4, 109.6, 23.5];
-        const uRange = [-2.75, 7.27];
-        const vRange = [-1.76, 6.65];
+      const image = 'wind_overlay.png';
+      const bounds = [102, 8.4, 109.6, 23.5];
+      const uRange = [-2.75, 7.27];
+      const vRange = [-1.76, 6.65];
 
-
-        // 1. Tạo MapLibre map
-        const map = new maplibregl.Map({
-          container: 'map',
-          style: "https://maps.track-asia.com/styles/v2/simple.json?key=public",
-          center: [102, 15],
-          zoom: 6
-        });
-
-        // 2. Khởi tạo Deck.GL overlay
-        const deckOverlay = new deck.MapboxOverlay({
-          interleaved: true,
-          layers: [
-            new WindGL.ParticleLayer({
-              id: 'particle',
-              image,
-              bounds,
-              uRange,
-              vRange,
-              numParticles: 1000,
-              maxAge: 20,
-              speedFactor: 100,
-              width: 3,
-              color: [200, 200, 200],
-              opacity: 1,
-              animate: true,
-              getPolygonOffset: () => [0, -1000],
-            }),
-          ]
-        });
-
-        // 3. Gắn deck lên MapLibre
-        map.on('load', () => {
-          map.addControl(deckOverlay);
-        });
+      // 1. Tạo MapLibre map
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: "https://maps.track-asia.com/styles/v2/simple.json?key=public",
+        center: [102, 15],
+        zoom: 6
       });
-    </script>
-  </body>
+
+      // 2. Khởi tạo Deck.GL overlay
+      let deckOverlay = new deck.MapboxOverlay({
+        interleaved: true,
+        layers: []
+      });
+
+      // 3. Attribution controls
+      const attributionControl = new AttributionControl('Wind data demo - Speed-based coloring');
+      document.getElementById('bottom-right').prepend(attributionControl.onAdd());
+
+      // 4. Create fake deckgl object for InfoControl
+      const fakeDeckg = {
+        props: { layers: [] },
+        setProps: (props) => {
+          if (props.onViewStateChange) {
+            map.on('move', () => {
+              const center = map.getCenter();
+              const zoom = map.getZoom();
+              const bearing = map.getBearing();
+              const pitch = map.getPitch();
+
+              props.onViewStateChange({
+                viewState: {
+                  longitude: center.lng,
+                  latitude: center.lat,
+                  zoom: zoom,
+                  bearing: bearing,
+                  pitch: pitch,
+                  altitude: 1.5
+                }
+              });
+            });
+          }
+        }
+      };
+
+      // 5. Info panel
+      const infoControl = new InfoControl({
+        deckgl: fakeDeckg
+      });
+      document.getElementById('top-left').prepend(infoControl.onAdd());
+
+      // 6. FPS meter
+      const fpsMeterControl = new FpsMeterControl();
+      document.getElementById('bottom-right').prepend(fpsMeterControl.onAdd());
+
+      // 7. Update function
+      function update() {
+        const layers = [
+          new WindGL.ParticleLayer({
+            id: 'particle',
+            image,
+            bounds,
+            uRange,
+            vRange,
+            numParticles: config.particle.numParticles,
+            maxAge: config.particle.maxAge,
+            speedFactor: config.particle.speedFactor,
+            width: config.particle.width,
+            opacity: config.particle.opacity,
+            animate: config.particle.animate,
+            colorStops: config.particle.colorStops,
+            getPolygonOffset: () => [0, -1000],
+          })
+        ];
+
+        deckOverlay.setProps({ layers });
+
+        // Update info control
+        infoControl.deckgl = { props: { layers } };
+      }
+
+      // 8. Gắn deck lên MapLibre và khởi tạo GUI
+      map.on('load', () => {
+        map.addControl(deckOverlay);
+        update();
+
+        // Initialize GUI with fake deckgl object for controls
+        const fakeGuiDeckg = {
+          props: {
+            layers: [{
+              id: 'particle',
+              step: () => deckOverlay._deck?.props?.layers?.find(x => x.id === 'particle')?.step(),
+              clear: () => deckOverlay._deck?.props?.layers?.find(x => x.id === 'particle')?.clear()
+            }]
+          }
+        };
+        initGui(config, update, { deckgl: fakeGuiDeckg });
+      });
+    });
+  </script>
+</body>
 
 </html>

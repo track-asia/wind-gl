@@ -5,31 +5,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-import {LineLayer} from '@deck.gl/layers';
-import {isWebGL2, Buffer, Transform} from '@luma.gl/core';
-import {isViewportGlobe, getViewportGlobeCenter, getViewportGlobeRadius, getViewportBounds} from './utils/viewport.js';
-import updateTransformVs from './particle-layer-update-transform.vs.glsl';
+import { LineLayer } from "@deck.gl/layers";
+import { isWebGL2, Buffer, Transform } from "@luma.gl/core";
+import {
+  isViewportGlobe,
+  getViewportGlobeCenter,
+  getViewportGlobeRadius,
+  getViewportBounds,
+} from "./utils/viewport.js";
+import updateTransformVs from "./particle-layer-update-transform.vs.glsl";
 
 const FPS = 30;
-
-const DEFAULT_COLOR = [255, 255, 255, 255];
 
 const defaultProps = {
   ...LineLayer.defaultProps,
 
-  image: {type: 'image', value: null, async: true},
-  uRange: {type: 'array', value: [-126, 125]}, // [uMin, uMax]
-  vRange: {type: 'array', value: [-126, 125]}, // [vMin, vMax]
+  image: { type: "image", value: null, async: true },
+  uRange: { type: "array", value: [-126, 125] }, // [uMin, uMax]
+  vRange: { type: "array", value: [-126, 125] }, // [vMin, vMax]
 
-  numParticles: {type: 'number', min: 1, max: 1000000, value: 5000},
-  maxAge: {type: 'number', min: 1, max: 255, value: 100},
-  speedFactor: {type: 'number', min: 0, max: 1, value: 1},
+  numParticles: { type: "number", min: 1, max: 1000000, value: 1000 },
+  maxAge: { type: "number", min: 1, max: 255, value: 100 },
+  speedFactor: { type: "number", min: 0, max: 1000, value: 1 },
 
-  color: {type: 'color', value: DEFAULT_COLOR},
-  width: {type: 'number', value: 1},
+  width: { type: "number", value: 1 },
   animate: true,
 
-  bounds: {type: 'array', value: [-180, -90, 180, 90], compare: true},
+  colorStops: {
+    type: "array",
+    value: [
+      0.0,
+      "#3288bd",
+      10,
+      "#66c2a5",
+      20,
+      "#abdda4",
+      30,
+      "#e6f598",
+      40,
+      "#fee08b",
+      50,
+      "#fdae61",
+      60,
+      "#f46d43",
+      100.0,
+      "#d53e4f",
+    ],
+  },
+
+  bounds: { type: "array", value: [-180, -90, 180, 90], compare: true },
   wrapLongitude: true,
 };
 
@@ -38,27 +62,76 @@ export default class ParticleLayer extends LineLayer {
     return {
       ...super.getShaders(),
       inject: {
-        'vs:#decl': `
+        "vs:#decl": `
           varying float drop;
+          varying float vSpeed;
           const vec2 DROP_POSITION = vec2(0);
+          
+          uniform sampler2D bitmapTexture;
+          uniform vec2 uRange;
+          uniform vec2 vRange;
+          uniform vec4 bounds;
+          
+          vec2 getUV(vec2 pos) {
+            return vec2(
+              (pos.x - bounds[0]) / (bounds[2] - bounds[0]),
+              (pos.y - bounds[3]) / (bounds[1] - bounds[3])
+            );
+          }
+          
+          vec2 raster_get_values(vec4 color) {
+            float u = mix(uRange.x, uRange.y, color.x);
+            float v = mix(vRange.x, vRange.y, color.y);
+            return vec2(u, v);
+          }
         `,
-        'vs:#main-start': `
+        "vs:#main-start": `
           drop = float(instanceSourcePositions.xy == DROP_POSITION || instanceTargetPositions.xy == DROP_POSITION);
+          
+          if (drop < 0.5) {
+            vec2 uv = getUV(instanceSourcePositions.xy);
+            vec4 bitmapColor = texture2D(bitmapTexture, uv);
+            vec2 speed = raster_get_values(bitmapColor);
+            vSpeed = sqrt(speed.x * speed.x + speed.y * speed.y);
+          } else {
+            vSpeed = 0.0;
+          }
         `,
-        'fs:#decl': `
+        "fs:#decl": `
           varying float drop;
+          varying float vSpeed;
+          uniform float colorStops[16]; // 8 stops * 2 (value + color index)
+          uniform vec3 colorValues[8];  // RGB values for each color
+          
+          vec3 getSpeedColor(float speed) {
+            // Find the appropriate color stop
+            for (int i = 0; i < 7; i++) {
+              float currentStop = colorStops[i * 2];
+              float nextStop = colorStops[(i + 1) * 2];
+              
+              if (speed <= nextStop) {
+                float t = (speed - currentStop) / (nextStop - currentStop);
+                return mix(colorValues[i], colorValues[i + 1], clamp(t, 0.0, 1.0));
+              }
+            }
+            return colorValues[7]; // Return last color if speed exceeds all stops
+          }
         `,
-        'fs:#main-start': `
+        "fs:#main-start": `
           if (drop > 0.5) discard;
+        `,
+        "fs:DECKGL_FILTER_COLOR": `
+          vec3 speedColor = getSpeedColor(vSpeed);
+          color = vec4(speedColor, color.a);
         `,
       },
     };
   }
 
   initializeState() {
-    const {gl} = this.context;
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
-      throw new Error('WebGL 2 is required');
+      throw new Error("WebGL 2 is required");
     }
 
     super.initializeState({});
@@ -66,13 +139,18 @@ export default class ParticleLayer extends LineLayer {
     this._setupTransformFeedback();
 
     const attributeManager = this.getAttributeManager();
-    attributeManager.remove(['instanceSourcePositions', 'instanceTargetPositions', 'instanceColors', 'instanceWidths']);
+    attributeManager.remove([
+      "instanceSourcePositions",
+      "instanceTargetPositions",
+      "instanceColors",
+      "instanceWidths",
+    ]);
   }
 
-  updateState({props, oldProps, changeFlags}) {
-    const {numParticles, maxAge, color, width} = props;
+  updateState({ props, oldProps, changeFlags }) {
+    const { numParticles, maxAge, width, colorStops } = props;
 
-    super.updateState({props, oldProps, changeFlags});
+    super.updateState({ props, oldProps, changeFlags });
 
     if (!numParticles || !maxAge || !width) {
       this._deleteTransformFeedback();
@@ -82,11 +160,8 @@ export default class ParticleLayer extends LineLayer {
     if (
       numParticles !== oldProps.numParticles ||
       maxAge !== oldProps.maxAge ||
-      color[0] !== oldProps.color[0] ||
-      color[1] !== oldProps.color[1] ||
-      color[2] !== oldProps.color[2] ||
-      color[3] !== oldProps.color[3] ||
-      width !== oldProps.width
+      width !== oldProps.width ||
+      JSON.stringify(colorStops) !== JSON.stringify(oldProps.colorStops)
     ) {
       this._setupTransformFeedback();
     }
@@ -98,19 +173,27 @@ export default class ParticleLayer extends LineLayer {
     super.finalizeState();
   }
 
-  draw({uniforms}) {
-    const {gl} = this.context;
+  draw({ uniforms }) {
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
       return;
     }
 
-    const {initialized} = this.state;
+    const { initialized } = this.state;
     if (!initialized) {
       return;
     }
 
-    const {animate} = this.props;
-    const {sourcePositions, targetPositions, sourcePositions64Low, targetPositions64Low, colors, widths, model} = this.state;
+    const { animate, colorStops, image, uRange, vRange, bounds } = this.props;
+    const {
+      sourcePositions,
+      targetPositions,
+      sourcePositions64Low,
+      targetPositions64Low,
+      colors,
+      widths,
+      model,
+    } = this.state;
 
     model.setAttributes({
       instanceSourcePositions: sourcePositions,
@@ -121,25 +204,73 @@ export default class ParticleLayer extends LineLayer {
       instanceWidths: widths,
     });
 
-    super.draw({uniforms});
+    // Parse colorStops into uniforms
+    const { colorStopsArray, colorValuesArray } =
+      this._parseColorStops(colorStops);
+
+    super.draw({
+      uniforms: {
+        ...uniforms,
+        bitmapTexture: image,
+        uRange,
+        vRange,
+        bounds,
+        colorStops: colorStopsArray,
+        colorValues: colorValuesArray,
+      },
+    });
 
     if (animate) {
       this.requestStep();
     }
   }
 
+  _parseColorStops(colorStops) {
+    const colorStopsArray = new Array(16).fill(0); // 8 stops * 2
+    const colorValuesArray = new Array(24).fill(0); // 8 colors * 3 (RGB)
+
+    for (let i = 0; i < colorStops.length; i += 2) {
+      const stopIndex = i / 2;
+      if (stopIndex >= 8) break;
+
+      const speed = colorStops[i];
+      const colorHex = colorStops[i + 1];
+
+      // Parse hex color to RGB
+      const rgb = this._hexToRgb(colorHex);
+
+      colorStopsArray[stopIndex * 2] = speed;
+      colorValuesArray[stopIndex * 3] = rgb.r / 255;
+      colorValuesArray[stopIndex * 3 + 1] = rgb.g / 255;
+      colorValuesArray[stopIndex * 3 + 2] = rgb.b / 255;
+    }
+
+    return { colorStopsArray, colorValuesArray };
+  }
+
+  _hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result
+      ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16),
+        }
+      : { r: 0, g: 0, b: 0 };
+  }
+
   _setupTransformFeedback() {
-    const {gl} = this.context;
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
       return;
     }
 
-    const {initialized} = this.state;
+    const { initialized } = this.state;
     if (initialized) {
       this._deleteTransformFeedback();
     }
 
-    const {numParticles, maxAge, color, width} = this.props;
+    const { numParticles, maxAge, width } = this.props;
 
     // sourcePositions/targetPositions buffer layout:
     // |          age0         |          age1         |          age2         |...|          ageN         |
@@ -150,10 +281,23 @@ export default class ParticleLayer extends LineLayer {
     const targetPositions = new Buffer(gl, new Float32Array(numInstances * 3));
     const sourcePositions64Low = new Float32Array([0, 0, 0]); // constant attribute
     const targetPositions64Low = new Float32Array([0, 0, 0]); // constant attribute
-    const colors = new Buffer(gl, new Float32Array(new Array(numInstances).fill(undefined).map((_, i) => {
-      const age = Math.floor(i / numParticles);
-      return [color[0], color[1], color[2], (color[3] ?? 255) * (1 - age / maxAge)].map(d => d / 255);
-    }).flat()));
+    const colors = new Buffer(
+      gl,
+      new Float32Array(
+        new Array(numInstances)
+          .fill(undefined)
+          .map((_, i) => {
+            const age = Math.floor(i / numParticles);
+            return [
+              255, // white default
+              255,
+              255,
+              255 * (1 - age / maxAge),
+            ].map((d) => d / 255);
+          })
+          .flat()
+      )
+    );
     const widths = new Float32Array([width]); // constant attribute
 
     const transform = new Transform(gl, {
@@ -164,7 +308,7 @@ export default class ParticleLayer extends LineLayer {
         targetPosition: targetPositions,
       },
       feedbackMap: {
-        sourcePosition: 'targetPosition',
+        sourcePosition: "targetPosition",
       },
       vs: updateTransformVs,
       elementCount: numParticles,
@@ -185,19 +329,21 @@ export default class ParticleLayer extends LineLayer {
   }
 
   _runTransformFeedback() {
-    const {gl} = this.context;
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
       return;
     }
 
-    const {initialized} = this.state;
+    const { initialized } = this.state;
     if (!initialized) {
       return;
     }
 
-    const {viewport, timeline} = this.context;
-    const {image, uRange, vRange, bounds, numParticles, speedFactor, maxAge} = this.props;
-    const {numAgedInstances, transform, previousViewportZoom, previousTime} = this.state;
+    const { viewport, timeline } = this.context;
+    const { image, uRange, vRange, bounds, numParticles, speedFactor, maxAge } =
+      this.props;
+    const { numAgedInstances, transform, previousViewportZoom, previousTime } =
+      this.state;
     const time = timeline.getTime();
     if (!image || time === previousTime) {
       return;
@@ -208,7 +354,8 @@ export default class ParticleLayer extends LineLayer {
     const viewportGlobeCenter = getViewportGlobeCenter(viewport);
     const viewportGlobeRadius = getViewportGlobeRadius(viewport);
     const viewportBounds = getViewportBounds(viewport);
-    const viewportZoomChangeFactor = 2 ** ((previousViewportZoom - viewport.zoom) * 4);
+    const viewportZoomChangeFactor =
+      2 ** ((previousViewportZoom - viewport.zoom) * 4);
 
     // speed factor for current zoom level
     const currentSpeedFactor = speedFactor / 2 ** (viewport.zoom + 7);
@@ -232,12 +379,16 @@ export default class ParticleLayer extends LineLayer {
       time,
       seed: Math.random(),
     };
-    transform.run({uniforms});
+    transform.run({ uniforms });
 
     // update particles age1-age(N-1)
     // copy age0-age(N-2) sourcePositions to age1-age(N-1) targetPositions
-    const sourcePositions = transform.bufferTransform.bindings[transform.bufferTransform.currentIndex].sourceBuffers.sourcePosition;
-    const targetPositions = transform.bufferTransform.bindings[transform.bufferTransform.currentIndex].feedbackBuffers.targetPosition;
+    const sourcePositions =
+      transform.bufferTransform.bindings[transform.bufferTransform.currentIndex]
+        .sourceBuffers.sourcePosition;
+    const targetPositions =
+      transform.bufferTransform.bindings[transform.bufferTransform.currentIndex]
+        .feedbackBuffers.targetPosition;
     sourcePositions.copyData({
       sourceBuffer: targetPositions,
       readOffset: 0,
@@ -255,34 +406,34 @@ export default class ParticleLayer extends LineLayer {
   }
 
   _resetTransformFeedback() {
-    const {gl} = this.context;
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
       return;
     }
 
-    const {initialized} = this.state;
+    const { initialized } = this.state;
     if (!initialized) {
       return;
     }
 
-    const {numInstances, sourcePositions, targetPositions} = this.state;
+    const { numInstances, sourcePositions, targetPositions } = this.state;
 
-    sourcePositions.subData({data: new Float32Array(numInstances * 3)});
-    targetPositions.subData({data: new Float32Array(numInstances * 3)});
+    sourcePositions.subData({ data: new Float32Array(numInstances * 3) });
+    targetPositions.subData({ data: new Float32Array(numInstances * 3) });
   }
 
   _deleteTransformFeedback() {
-    const {gl} = this.context;
+    const { gl } = this.context;
     if (!isWebGL2(gl)) {
       return;
     }
 
-    const {initialized} = this.state;
+    const { initialized } = this.state;
     if (!initialized) {
       return;
     }
 
-    const {sourcePositions, targetPositions, colors, transform} = this.state;
+    const { sourcePositions, targetPositions, colors, transform } = this.state;
 
     sourcePositions.delete();
     targetPositions.delete();
@@ -302,7 +453,7 @@ export default class ParticleLayer extends LineLayer {
   }
 
   requestStep() {
-    const {stepRequested} = this.state;
+    const { stepRequested } = this.state;
     if (stepRequested) {
       return;
     }
@@ -327,5 +478,5 @@ export default class ParticleLayer extends LineLayer {
   }
 }
 
-ParticleLayer.layerName = 'ParticleLayer';
+ParticleLayer.layerName = "ParticleLayer";
 ParticleLayer.defaultProps = defaultProps;
