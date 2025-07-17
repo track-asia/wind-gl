@@ -93,14 +93,14 @@ export default class ParticleLayer extends LineLayer {
             vec4 bitmapColor = texture2D(bitmapTexture, uv);
             vec2 speed = raster_get_values(bitmapColor);
             
-            // Fast approximated magnitude calculation (~4% error, much faster than sqrt)
-            vec2 absSpeed = abs(speed);
-            vSpeed = max(absSpeed.x, absSpeed.y) + 0.428 * min(absSpeed.x, absSpeed.y);
+            // Squared magnitude calculation (fastest, 0% error, need to adjust colorStops)
+            vSpeed = speed.x * speed.x + speed.y * speed.y;
             
             // Alternative options for different speed/accuracy tradeoffs:
+            // vec2 absSpeed = abs(speed);
+            // vSpeed = max(absSpeed.x, absSpeed.y) + 0.428 * min(absSpeed.x, absSpeed.y); // Fast approximation (~4% error)
             // vSpeed = sqrt(speed.x * speed.x + speed.y * speed.y); // Original (accurate but slow)
             // vSpeed = abs(speed.x) + abs(speed.y); // Manhattan distance (~30% error, very fast)
-            // vSpeed = speed.x * speed.x + speed.y * speed.y; // Squared magnitude (fastest, need to adjust colorStops)
           } else {
             vSpeed = 0.0;
           }
@@ -247,7 +247,8 @@ export default class ParticleLayer extends LineLayer {
       // Parse hex color to RGB
       const rgb = this._hexToRgb(colorHex);
 
-      colorStopsArray[stopIndex * 2] = speed;
+      // Auto-square the speed values since we're using squared magnitude in shader
+      colorStopsArray[stopIndex * 2] = speed * speed;
       colorValuesArray[stopIndex * 3] = rgb.r / 255;
       colorValuesArray[stopIndex * 3 + 1] = rgb.g / 255;
       colorValuesArray[stopIndex * 3 + 2] = rgb.b / 255;
