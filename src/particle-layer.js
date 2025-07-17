@@ -15,8 +15,6 @@ import {
 } from "./utils/viewport.js";
 import updateTransformVs from "./particle-layer-update-transform.vs.glsl";
 
-const FPS = 30;
-
 const defaultProps = {
   ...LineLayer.defaultProps,
 
@@ -112,16 +110,39 @@ export default class ParticleLayer extends LineLayer {
           uniform vec3 colorValues[8];  // RGB values for each color
           
           vec3 getSpeedColor(float speed) {
-            // Find the appropriate color stop
-            for (int i = 0; i < 7; i++) {
-              float currentStop = colorStops[i * 2];
-              float nextStop = colorStops[(i + 1) * 2];
-              
-              if (speed <= nextStop) {
-                float t = (speed - currentStop) / (nextStop - currentStop);
-                return mix(colorValues[i], colorValues[i + 1], clamp(t, 0.0, 1.0));
-              }
+            // Unrolled loop for better GPU performance (no branching)
+            float t;
+            
+            // Check each stop manually (faster than loop on GPU)
+            if (speed <= colorStops[2]) {
+              t = (speed - colorStops[0]) / (colorStops[2] - colorStops[0]);
+              return mix(colorValues[0], colorValues[1], clamp(t, 0.0, 1.0));
             }
+            if (speed <= colorStops[4]) {
+              t = (speed - colorStops[2]) / (colorStops[4] - colorStops[2]);
+              return mix(colorValues[1], colorValues[2], clamp(t, 0.0, 1.0));
+            }
+            if (speed <= colorStops[6]) {
+              t = (speed - colorStops[4]) / (colorStops[6] - colorStops[4]);
+              return mix(colorValues[2], colorValues[3], clamp(t, 0.0, 1.0));
+            }
+            if (speed <= colorStops[8]) {
+              t = (speed - colorStops[6]) / (colorStops[8] - colorStops[6]);
+              return mix(colorValues[3], colorValues[4], clamp(t, 0.0, 1.0));
+            }
+            if (speed <= colorStops[10]) {
+              t = (speed - colorStops[8]) / (colorStops[10] - colorStops[8]);
+              return mix(colorValues[4], colorValues[5], clamp(t, 0.0, 1.0));
+            }
+            if (speed <= colorStops[12]) {
+              t = (speed - colorStops[10]) / (colorStops[12] - colorStops[10]);
+              return mix(colorValues[5], colorValues[6], clamp(t, 0.0, 1.0));
+            }
+            if (speed <= colorStops[14]) {
+              t = (speed - colorStops[12]) / (colorStops[14] - colorStops[12]);
+              return mix(colorValues[6], colorValues[7], clamp(t, 0.0, 1.0));
+            }
+            
             return colorValues[7]; // Return last color if speed exceeds all stops
           }
         `,
@@ -201,6 +222,9 @@ export default class ParticleLayer extends LineLayer {
       colors,
       widths,
       model,
+      cachedColorStops,
+      cachedColorStopsArray,
+      cachedColorValuesArray,
     } = this.state;
 
     model.setAttributes({
@@ -212,9 +236,23 @@ export default class ParticleLayer extends LineLayer {
       instanceWidths: widths,
     });
 
-    // Parse colorStops into uniforms
-    const { colorStopsArray, colorValuesArray } =
-      this._parseColorStops(colorStops);
+    // Cache colorStops parsing to avoid recalculation every frame
+    let colorStopsArray, colorValuesArray;
+    if (cachedColorStops !== colorStops) {
+      const parsed = this._parseColorStops(colorStops);
+      colorStopsArray = parsed.colorStopsArray;
+      colorValuesArray = parsed.colorValuesArray;
+      
+      // Cache the results
+      this.setState({
+        cachedColorStops: colorStops,
+        cachedColorStopsArray: colorStopsArray,
+        cachedColorValuesArray: colorValuesArray,
+      });
+    } else {
+      colorStopsArray = cachedColorStopsArray;
+      colorValuesArray = cachedColorValuesArray;
+    }
 
     super.draw({
       uniforms: {
@@ -468,10 +506,12 @@ export default class ParticleLayer extends LineLayer {
     }
 
     this.state.stepRequested = true;
-    setTimeout(() => {
+    
+    // Use requestAnimationFrame for better performance and smoother animation
+    requestAnimationFrame(() => {
       this.step();
       this.state.stepRequested = false;
-    }, 1000 / FPS);
+    });
   }
 
   step() {
